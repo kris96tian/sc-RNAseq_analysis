@@ -181,15 +181,64 @@ DimPlot(seuratobj, reduction = 'umap')
 
 
 
+###########################################
+#      SingleR configuration    ###########
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.19")
+BiocManager::install(version='devel')
+BiocManager::install("beachmat")
+BiocManager::install("SingleR", force = TRUE)
+
+library(SingleR)
+BiocManager::install("celldex", force = TRUE)
+library(celldex)
+BiocManager::install("ensembldb")
+library("ensembldb")
+BiocManager::install("SingleCellExperiment")
+library("SingleCellExperiment")
+###########################################
 
 
 
+ref <- celldex::DatabaseImmuneCellExpressionData()
+results <- SingleR(test=as.SingleCellExperiment(seuratobj), ref=ref,labels=ref$label.main)
 
+results
+"""
+DataFrame with 713 rows and 4 columns
+                                              scores
+                                            <matrix>
+AAACTCCGTTGGATCT-1  0.465436:0.1497373:0.0964320:...
+AAATGCTTCATGGCCG-1  0.148744:0.0641219:0.0809325:...
+AAATTCGCAATTCATC-1  0.134625:0.0564068:0.0796276:...
+AACACATTCCAGCTAA-1  0.386984:0.1429529:0.0826370:...
+AACACGAGTGAAGTTG-1  0.378763:0.1620232:0.1002620:...
+...                                              ...
+TGTCGTTTCCGTTGCC-1 0.4058990:0.1581598:0.1470770:...
+TGTGAACCACTTCGGT-1 0.0627438:0.0858593:0.1073304:...
+TGTGAGGAGATTGCGC-1 0.1085517:0.0942914:0.1934184:...
+TGTGCGCGTTGCTCGA-1 0.1000964:0.0885176:0.0843213:...
+TGTGTTGAGGTTAGTT-1 0.4279610:0.1591273:0.0902314:...
+                          labels delta.next pruned.labels
+                     <character>  <numeric>   <character>
+AAACTCCGTTGGATCT-1       B cells  0.3156991       B cells
+AAATGCTTCATGGCCG-1       B cells  0.0547975       B cells
+AAATTCGCAATTCATC-1       B cells  0.0299162       B cells
+AACACATTCCAGCTAA-1       B cells  0.2440307       B cells
+AACACGAGTGAAGTTG-1       B cells  0.2167396       B cells
+...                          ...        ...           ...
+TGTCGTTTCCGTTGCC-1       B cells 0.24374761       B cells
+TGTGAACCACTTCGGT-1      NK cells 0.02098968      NK cells
+TGTGAGGAGATTGCGC-1 T cells, CD4+ 0.04887370 T cells, CD4+
+TGTGCGCGTTGCTCGA-1 T cells, CD4+ 0.00478813            NA
+TGTGTTGAGGTTAGTT-1       B cells 0.26883367       B cells
+"""
+# adding the annotations to the seurat object metadata
+seuratobj$singlr_labels <- results$labels
 
-
-
-
-
+# Plotting ! 
+DimPlot(seuratobj, reduction = 'umap', group.by = 'singlr_labels', label = TRUE)
 
 
 
