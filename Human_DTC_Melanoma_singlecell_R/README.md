@@ -16,3 +16,4 @@ Paired-end, dual indexing:
 The cellranger multi pipeline in Cell Ranger v8.0.0 was used to analyze libraries.
 Published on March 13th, 2024
 This dataset is licensed under the Creative Commons Attribution license (https://www.10xgenomics.com/datasets/10k-human-dtc-melanoma-GEM-X)
+![umap_annotated](https://github.com/kris96tian/sc-RNAseq_analysis/assets/92834350/6bd22ebf-bc9d-41a0-9859-73a7b0783bec)
