@@ -1,0 +1,179 @@
+"""
+Dataset: 
+        PBMC (Peripheral Blood Mononuclear Cell) 
+          
+          from the paper Integrated analysis of multimodal 
+          single-cell data by Hao et al.
+          https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE164378
+"""
+
+"""   
+
+                  sc-RNAseq Analysis in Julia           
+
+"""
+
+julia> using PlotlyJS, SingleCellProjections, DataFrames, CSV, UMAP
+
+julia> base_path = "/content";
+
+julia> sample_paths = joinpath.(base_path, ["GSE164378_RNA_ADT_3P_P7.h5", "GSE164378_RNA_ADT_3P_P8.h5"]);
+
+julia> # Loading count matrix
+
+julia> counts = load_counts(sample_paths; sample_names=["P7","P8"])
+DataMatrix (33766 variables and 52121 observations)
+  SparseArrays.SparseMatrixCSC{Int64, Int32}
+  Variables: id, feature_type, name, genome, read, pattern, sequence
+  Observations: id, sampleName, barcode
+
+julia> # specify mitochondrial genes
+
+julia> var_counts_fraction!(counts, "name"=>contains(r"^MT-"), "feature_type"=>isequal("Gene Expression"), "fraction_mt")
+DataMatrix (33766 variables and 52121 observations)
+  SparseArrays.SparseMatrixCSC{Int64, Int32}
+  Variables: id, feature_type, name, genome, read, pattern, sequence
+  Observations: id, sampleName, barcode, fraction_mt
+  Models: VarCountsFractionModel(subset_size=13, total_size=33538, col="fraction_mt")
+
+julia> # Loading some cell annotations
+
+julia> cell_annotations = CSV.read(joinpath(base_path, "GSE164378_RNA_ADT_3P.csv.gz"), DataFrame);
+
+julia> # leftjoining to annotate based on the :barcode column 
+
+julia> leftjoin!(counts.obs, cell_annotations; on=:barcode);
+
+julia> # Taking a peak at the data now
+
+julia> counts.obs[1:10,["id","sampleName","barcode","fraction_mt","celltype.l1"]]
+10×5 DataFrame
+ Row │ id                        sampleName  barcode                fraction_mt  celltype.l1 
+     │ String                    String      String                 Float64      String7?    
+─────┼───────────────────────────────────────────────────────────────────────────────────────
+   1 │ P7_E2L1_AAACCCACAGGCCCTA  P7          E2L1_AAACCCACAGGCCCTA    0.0559684  B
+   2 │ P7_E2L1_AAACCCATCCTTTAGT  P7          E2L1_AAACCCATCCTTTAGT    0.0901609  Mono
+   3 │ P7_E2L1_AAACGAAAGACCTCAT  P7          E2L1_AAACGAAAGACCTCAT    0.0694161  Mono
+   4 │ P7_E2L1_AAACGAACATCTAGAC  P7          E2L1_AAACGAACATCTAGAC    0.0422812  Mono
+   5 │ P7_E2L1_AAACGAAGTACCGTGC  P7          E2L1_AAACGAAGTACCGTGC    0.0248602  CD4 T
+   6 │ P7_E2L1_AAACGAATCGAACCTA  P7          E2L1_AAACGAATCGAACCTA    0.0810904  NK
+   7 │ P7_E2L1_AAACGCTGTCTGTTAG  P7          E2L1_AAACGCTGTCTGTTAG    0.0674323  B
+   8 │ P7_E2L1_AAAGAACCAGGGAGAG  P7          E2L1_AAAGAACCAGGGAGAG    0.0688108  DC
+   9 │ P7_E2L1_AAAGAACCATGTCTAG  P7          E2L1_AAAGAACCATGTCTAG    0.0467712  Mono
+  10 │ P7_E2L1_AAAGAACTCAAGTAAG  P7          E2L1_AAAGAACTCAAGTAAG    0.0556156  Mono
+
+julia> # Transforming by storing a "MatrixExpression"  instead of the sparse matrix 
+
+julia> transformed = sctransform(counts)
+[ Info: Bandwidth 0.10564211006470187
+[ Info: - Removed 11422 variables that were not found in Model
+DataMatrix (22344 variables and 52121 observations)
+  A+B₁B₂B₃
+  Variables: id, feature_type, name, genome, read, pattern, sequence, logGeneMean, outlier, beta0, ...
+  Observations: id, sampleName, barcode, fraction_mt, nCount_ADT, nFeature_ADT, nCount_RNA, nFeature_RNA, orig.ident, lane, ...
+  Models: SCTransformModel(nvar=22344, clip=41.68), VarCountsFraction
+
+julia>
+
+julia> # Normalizing and centering the data
+
+julia> normalized = normalize_matrix(transformed, "fraction_mt")
+DataMatrix (22344 variables and 52121 observations)
+  A+B₁B₂B₃+(-β)X'
+  Variables: id, feature_type, name, genome, read, pattern, sequence, logGeneMean, outlier, beta0, ...
+  Observations: id, sampleName, barcode, fraction_mt, nCount_ADT, nFeature_ADT, nCount_RNA, nFeature_RNA, orig.ident, lane, ...
+  Models: NormalizationModel(rank=2, ~1+num(fraction_mt)), SCTransform, VarCountsFraction
+
+julia> # Filtering by keeping all cells that are not labeled as "other"
+
+julia> filtered = filter_obs("celltype.l1"=>!isequal("other"), normalized)
+DataMatrix (22344 variables and 51172 observations)
+  ASᵣ+B₁B₂B₃ᵣ+(-β)Xₗ'
+  Variables: id, feature_type, name, genome, read, pattern, sequence, logGeneMean, outlier, beta0, ...
+  Observations: id, sampleName, barcode, fraction_mt, nCount_ADT, nFeature_ADT, nCount_RNA, nFeature_RNA, orig.ident, lane, ...
+  Models: FilterModel(:, "celltype.l1"=>!Fix2{typeof(isequal), String}(isequal, "other")), Normalization, SCTransform, VarCountsFraction
+
+julia>
+
+julia> # Running Principal Component Analysis (PCA)
+
+julia> reduced = svd(filtered; nsv=20)
+DataMatrix (22344 variables and 51172 observations)
+  SVD (20 dimensions)
+  Variables: id, feature_type, name, genome, read, pattern, sequence, logGeneMean, outlier, beta0, ...
+  Observations: id, sampleName, barcode, fraction_mt, nCount_ADT, nFeature_ADT, nCount_RNA, nFeature_RNA, orig.ident, lane, ...
+  Models: SVDModel(nsv=20), Filter, Normalization, SCTransform, VarCountsFraction
+
+julia>
+
+julia> # force layout plots (also known as SPRING Plots
+
+julia> fl = force_layout(reduced; ndim=3, k=100)
+DataMatrix (3 variables and 51172 observations)
+Matrix{Float64}
+Variables: id
+Observations: id, sampleName, barcode, fraction_mt, nCount_ADT, nFeature_ADT, nCount_RNA, nFeature_RNA, orig.ident, lane, ...
+Models: NearestNeighborModel(base="force_layout", k=10), SVD, Filter, Normalization, SCTransform, ...
+
+julia>
+
+julia> umapped = umap(reduced, 3)
+DataMatrix (3 variables and 51172 observations)
+  Matrix{Float64}
+  Variables: id
+  Observations: id, sampleName, barcode, fraction_mt, nCount_ADT, nFeature_ADT, nCount_RNA, nFeature_RNA, orig.ident, lane, ...
+  Models: UMAPModel(n_components=3), SVD, Filter, Normalization, SCTransform, ...
+
+
+  julia> obs_coordinates(reduced)
+20×51172 Matrix{Float64}:
+ -19.773     44.9645     33.3513     68.884    -23.0725    …  -24.226     -24.9986     -24.6466    -23.0145    -23.8672
+ -43.8199    -1.8636     -5.05286     7.90671  -21.1743       -14.606     -15.4708     -14.9551    -17.518     -51.4473
+  32.5482   -20.5703     -0.730956   -1.59324  -15.7551       -16.662     -18.6327     -15.5302    -14.139      63.3881
+ -15.224     16.4381      2.3863    -34.366     -1.75566        0.95607     2.75823      0.585139    1.07992   -15.5485
+ -29.2144   -19.2143      9.70505     7.11956    5.64537        8.87198    10.2472       6.81792     8.14292   -40.7353
+ -12.7869     5.61568     1.23339     4.19706   -0.325064  …    2.52761     3.63844      2.12599     1.51915   -17.4427
+  -1.60179    0.919526   -8.29356   -14.5158    -2.64834        0.607049    0.895332    -0.678966    1.70015     5.20969
+  -5.02238   -1.63477   -15.9307    -14.558     -0.691315       5.34757     5.48204      2.20932     3.25269     6.15987
+   ⋮                                                       ⋱                                         ⋮         
+ -21.5326    -0.534496    2.0342     -1.00456   -1.12185       -0.89851    -0.374832    -0.650338    0.312272  -15.7552
+   5.10588   -1.77442    -3.70604     3.18415   -2.03719        8.85367     3.73683      5.48396    -5.84572    -0.248137
+  -3.57028   -7.40194    -3.48908    12.2338     1.32495   …   -4.84988    -2.25031     -4.32383     3.26191     2.61434
+  -2.77632   -3.94029    11.3855     11.0763     0.254044      -2.53902    -0.525548    -2.50072     3.95219     5.24211
+ -10.778      5.28473    -2.8907    -20.5005    -0.242408      -0.377767    0.0961022   -2.82624     0.900881   15.7101
+   6.85224    8.54443    -5.98931   -23.4831     2.80393       -1.87219     2.51706     -1.26385     1.79958    -1.43956
+  -4.26844    7.1159      2.40714   -22.3365    -0.750011       0.285235   -3.42329     -2.93707     3.43938     1.32871
+
+julia> obs_coordinates(fl)
+3×51172 Matrix{Float64}:
+  251.886   -99.0604   -10.9934  -114.764   514.867  -491.85    227.007  …   111.818    248.322    171.803    465.078   215.217
+  127.861  -319.721   -357.615   -456.412  -203.474   620.802   177.927       54.8269   -23.8386    11.4715  -102.633   178.58
+ -476.933   518.138    481.155    489.353  -294.528  -255.991  -494.572     -216.702   -245.45    -224.775   -285.333  -490.221
+
+julia> obs_coordinates(umapped)
+3×51172 Matrix{Float64}:
+   6.3317    -8.00208  -8.37071   -10.4344    6.84411  1.54941   …   5.10905   5.54405    5.45463   5.3494      7.35116
+ -17.7354    -3.46869  -4.08216    -2.92479  -1.5554   9.18907       2.20717   1.1428     1.36506  -0.415329  -16.9843
+  -0.599775   1.99677   0.132939    2.20512   1.12128  0.173019     -1.3925   -0.589649  -1.45371   2.07391    -1.48205
+
+julia> 
+
+
+### To plot :
+cmap = PyPlot.cm.get_cmap("viridis")
+
+# Plotting for UMAP
+umap_coords = obs_coordinates(umapped)
+scatter = PyPlot.scatter(
+                          umap_coords[1, :], 
+                          umap_coords[2, :], 
+                          c=umap_coords[3, :], 
+                          cmap=cmap, 
+                          label="UMAP Reduced Dimensions"
+                          )
+PyPlot.xlabel("UMAP 1")
+PyPlot.ylabel("UMAP 2")
+PyPlot.title("UMAP Reduced Dimensions")
+PyPlot.colorbar(scatter, label="Dimension 3")
+PyPlot.legend()
+PyPlot.savefig("umap_fig.png")
